@@ -20,11 +20,11 @@ parser.add_argument('--imgroot', default='/data1/sku_eval/', help='path to datas
 parser.add_argument('--trainfile', default='/data1/sku_eval/train.txt', help='path to trainfile')
 parser.add_argument('--valfile', default='/data1/sku_eval/val.txt', help='path to valfile')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=8)
-parser.add_argument('--batchSize', type=int, default=10, help='input batch size')
+parser.add_argument('--batchSize', type=int, default=12, help='input batch size')
 parser.add_argument('--imgH', type=int, default=320, help='the height of the input image to network')
 parser.add_argument('--nhidden', type=int, default=2048, help='size of the lstm hidden state')
 parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.002, help='learning rate for Critic, default=0.00005')
+parser.add_argument('--lr', type=float, default=0.001, help='learning rate for Critic, default=0.00005')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--pretrained_model', default='/home/zjw/projects/pic_evaluator/train_test/resnet50-19c8e357.pth', help="path to crnn (to continue training)")
 parser.add_argument('--experiment', default=None, help='Where to store samples and models')
@@ -72,7 +72,7 @@ print(optimizer)
 # Decay LR by a factor of 0.1 every 5 epochs
 exp_lr_scheduler = None
 if opt.sgd:
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.2)
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=6, gamma=0.2)
 
 
 
@@ -95,9 +95,9 @@ def train_model(model, criterion, optimizer, scheduler, train_num=-1, num_epochs
                 if scheduler is not None:
                     scheduler.step()
                 model.train(True)  # Set model to training mode
-                model.cnn.conv1.eval()  #fix block
-                model.cnn.bn1.eval()
-                model.cnn.layer1.eval()
+                # model.cnn.conv1.eval()  #fix block
+                # model.cnn.bn1.eval()
+                # model.cnn.layer1.eval()
                 # model.cnn.layer2.eval()
                 # model.cnn.layer3.eval()
                 # model.cnn.layer4.eval()
@@ -141,10 +141,10 @@ def train_model(model, criterion, optimizer, scheduler, train_num=-1, num_epochs
 
 
                     else:
-                        inputs = Variable(inputs.cuda(), requires_grad=False)
-                        label1_target = Variable(label1.cuda(), requires_grad=False)
-                        label2_target = Variable(label2.cuda(), requires_grad=False)
-                        label3_target = Variable(label3.cuda(), requires_grad=False)
+                        inputs = Variable(inputs.cuda(), volatile=True)
+                        label1_target = Variable(label1.cuda(), volatile=True)
+                        label2_target = Variable(label2.cuda(), volatile=True)
+                        label3_target = Variable(label3.cuda(), volatile=True)
 
                 else:
                     inputs = Variable(inputs)
@@ -160,13 +160,22 @@ def train_model(model, criterion, optimizer, scheduler, train_num=-1, num_epochs
                 res1 = model_ft.logsoftmax(out1)
                 res2 = model_ft.logsoftmax(out2)
                 res3 = model_ft.logsoftmax(out3)
-                res1 = res1 * (Variable(mask1.float().cuda(), requires_grad=False).view(opt.batchSize, -1))
-                res2 = res2 * (Variable(mask2.float().cuda(), requires_grad=False).view(opt.batchSize, -1))
+                newmask1 = Variable(mask1.float().cuda(), requires_grad=False).view(opt.batchSize, -1)
+                newmask2 = Variable(mask2.float().cuda(), requires_grad=False).view(opt.batchSize, -1)
+                res1 = res1 * newmask1
+                res2 = res2 * newmask2
 
                 loss1 = criterion(res1, label1_target)
                 loss2 = criterion(res2, label2_target)
                 loss3 = criterion(res3, label3_target)
-                loss = loss1 + loss2 + loss3
+                w11=0
+                w22=0
+                if torch.sum(mask1)>0.5*opt.batchSize:
+                    w11 = opt.batchSize/torch.sum(mask1)
+                if torch.sum(mask2)>0.5*opt.batchSize:
+                    w22 = opt.batchSize/torch.sum(mask2)
+
+                loss = 0.5*w11*loss1 + 0.5*w22*loss2 + loss3
 
                 # backward + optimize only if in training phase
                 if phase == 'train':
@@ -187,6 +196,7 @@ def train_model(model, criterion, optimizer, scheduler, train_num=-1, num_epochs
                     print('processed {} batches.'.format(batch_idx))
                     # print(pred)
                     # print(label_target.data)
+                    # print(w11, mask1)
                     lr = scheduler.get_lr() if scheduler is not None else opt.lr
                     print('Batch loss: {:.4f} Batch acc: {:.4f} Batch size: {} Learning rate: {}'.format(batch_loss, batch_acc/opt.batchSize, opt.batchSize, lr))
 
@@ -257,6 +267,6 @@ dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 
 
 #tain model
-model_final = train_model(model_ft, criterion, optimizer, exp_lr_scheduler, train_num=500000, num_epochs=opt.niter)
+model_final = train_model(model_ft, criterion, optimizer, exp_lr_scheduler, train_num=100000, num_epochs=opt.niter)
 
 torch.save(model_final.state_dict(), './models/param_best.pth')

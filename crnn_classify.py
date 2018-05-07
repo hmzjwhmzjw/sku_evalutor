@@ -49,12 +49,16 @@ class CRNNCLS(nn.Module):
             self.cnn = resnet_conv.resnet50()      #[b*3, 2048, 10, 32]
 
         self.pool = nn.AdaptiveMaxPool2d(1)    #[b*3, 2048, 3, 3]
+        # self.pool = nn.AdaptiveAvgPool2d(3)  # [b*3, 2048, 3, 3]
         # self.squeeze = nn.Conv2d(2048, 256, kernel_size=1) #压缩维度
         # nn.init.xavier_uniform(self.squeeze.weight)
+        # self.middle = nn.Linear(9*2048, 4096)
+        self.bn = nn.BatchNorm2d(2048)
+        self.relu = nn.ReLU(inplace=True)
 
         # self.rnn = nn.Sequential()
         last_input_dim = 2048
-        self.lstm = nn.LSTM(last_input_dim, n_hidden, num_layers=n_rnn)
+        self.lstm = nn.LSTM(last_input_dim, n_hidden, num_layers=n_rnn, dropout=0.5)
         # if n_rnn > 2:
         #     for i in range(1, n_rnn):
         #         self.rnn.add_module('LSTM{}'.format(i), BidirectionalLSTM(last_input_dim, n_hidden, n_hidden))
@@ -74,12 +78,12 @@ class CRNNCLS(nn.Module):
     #     self.hidden = self.init_hidden()
     #
         #fix block
-        for p in self.cnn.conv1.parameters():
-            p.requires_grad=False
-        for p in self.cnn.bn1.parameters():
-            p.requires_grad=False
-        for p in self.cnn.layer1.parameters():
-            p.requires_grad=False
+        # for p in self.cnn.conv1.parameters():
+        #     p.requires_grad=False
+        # for p in self.cnn.bn1.parameters():
+        #     p.requires_grad=False
+        # for p in self.cnn.layer1.parameters():
+        #     p.requires_grad=False
         # for p in self.cnn.layer2.parameters():
         #     p.requires_grad=False
         # for p in self.cnn.layer3.parameters():
@@ -94,8 +98,10 @@ class CRNNCLS(nn.Module):
         conv = self.cnn(input)
         # print('conv = self.cnn(input) size:', conv.size())
         conv = self.pool(conv)    #[batch*3, 2048, 1, 1]
-        # conv = self.squeeze(conv)
+        conv = self.bn(conv)
+        conv = self.relu(conv)
         b, c, h, w = conv.size()
+        # b, c = conv.size()
         # print('conv = self.pool_3step(conv) size:', conv.size())
 
         # conv = conv.permute(0, 2, 3, 1)  # [b, h*w, c]注意permute后内存是不变的，只是改变了tensor的stride

@@ -130,8 +130,10 @@ class ImageSerials(data.Dataset):
             for j in range(max(r1, r2), 3):
                 targets[j] = 0
             imgs[r2] = imgs[r1]
-        if targets[0] == -1 and targets[1] == -1 and targets[2] == 0:
-            imgs[2] = imgs[random.randint(0, 1)]
+        if targets[0] == -1 and targets[1] == -1 and targets[2] == 0 and r1 != r2 and seed > 45:
+            for j in range(max(r1, r2), 3):
+                targets[j] = 0
+            imgs[r2] = imgs[r1]
 
 
         if self.transform is not None:
